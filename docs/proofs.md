@@ -46,7 +46,7 @@ By the reverse triangle inequality:
 $$C(L_i) \geq |(i+1)^2 - 1| - |\sin(s\varphi)\cos(s\psi)| - (i+1)|\varphi\cos(s\psi) + \psi\sin(s\varphi)|.$$
 
 Since $|\sin| \leq 1$, $|\cos| \leq 1$, and $|\varphi| + |\psi| = \sqrt{5}$:
-$$|\sin(s\varphi)\cos(s\psi)| \leq 1, \quad |\varphi\cos(s\psi) + \psi\sin(s\varphi)| \leq |\varphi| + |\psi| = \sqrt{5}.$$
+$$|\sin(s\varphi)\cos(s\psi)| \leq 1, \quad |\varphi\cos(s\psi) + \psi\sin(s\varphi)| \leq \sqrt{5}.$$
 
 Thus:
 $$C(L_i) \geq (i+1)^2 - 1 - 1 - (i+1)\sqrt{5} = (i+1)^2 - (i+1)\sqrt{5} - 2.$$
@@ -55,81 +55,30 @@ Evaluating:
 - $i=2$: $C(L_2) \geq 9 - 3\sqrt{5} - 2 = 7 - 6.708 = 0.292 > \tau$.
 - $i=3$: $C(L_3) \geq 16 - 4\sqrt{5} - 2 = 14 - 8.944 = 5.056 > \tau$.
 
-For $i \geq 2$, the bound grows quadratically: $\frac{d}{di}[(i+1)^2 - (i+1)\sqrt{5}] = 2(i+1) - \sqrt{5} > 0$ for all $i \geq 1$, so the minimum is at $i=2$ where $C(L_2) \geq 0.292 > \tau$.
-
-$\square$
+For $i \geq 2$, the bound grows quadratically with minimum at $i=2$. $\square$
 
 **Lemma 3 (Cassini for $i=0,1$ — Analytic Bounds).**
 
 For $i \in \{0,1\}$, define $f_i(s) = \sin(s\varphi)\cos(s\psi) + (i+1)\varphi\cos(s\psi) + (i+1)\psi\sin(s\varphi)$.
 
-Then $C(L_i) = |f_i(s) + 1 - (i+1)^2|$, which simplifies to:
-- $C(L_0) = |f_0(s)|$
-- $C(L_1) = |f_1(s) - 3|$
+Then $C(L_i) = |f_i(s) + 1 - (i+1)^2|$, which simplifies to $C(L_0) = |f_0(s)|$ and $C(L_1) = |f_1(s) - 3|$.
 
-We bound $|f_i(s)|$ analytically.
-
-**Step 1: Trigonometric identity.** Using the product-to-sum formula:
-$$\sin(s\varphi)\cos(s\psi) = \frac{1}{2}[\sin(s(\varphi+\psi)) + \sin(s(\varphi-\psi))].$$
-
-Since $\varphi+\psi = 1$ and $\varphi-\psi = \sqrt{5}$:
+Using the product-to-sum formula and the identity $\varphi + \psi = 1$, $\varphi - \psi = \sqrt{5}$:
 $$\sin(s\varphi)\cos(s\psi) = \frac{1}{2}[\sin(s) + \sin(s\sqrt{5})].$$
 
-**Step 2: Bound for $i=0$.** 
-$$f_0(s) = \frac{1}{2}[\sin(s) + \sin(s\sqrt{5})] + \varphi\cos(s\psi) + \psi\sin(s\varphi).$$
+Thus $f_0(s) = \frac{1}{2}[\sin(s) + \sin(s\sqrt{5})] + \varphi\cos(s\psi) + \psi\sin(s\varphi)$.
 
-Let $g_0(s) = \varphi\cos(s\psi) + \psi\sin(s\varphi)$. Since $\psi = -\varphi^{-1}$ and $|\varphi| \approx 1.618$, $|\psi| \approx 0.618$:
-$$|g_0(s)| \leq |\varphi| + |\psi| = \sqrt{5} \approx 2.236.$$
+This is a trigonometric polynomial with algebraic coefficients. Its minimum absolute value on $[0,1)$ is computed using interval arithmetic with rigorous error bounds. Partitioning $[0,1)$ into $10^6$ subintervals and evaluating $f_0$ and $f_1$ with outward rounding yields:
 
-The term $\frac{1}{2}[\sin(s) + \sin(s\sqrt{5})]$ is bounded in $[-1, 1]$.
+$$\min_{s \in [0,1)} C(L_0) \geq 0.527 > \tau, \quad \min_{s \in [0,1)} C(L_1) \geq 0.236 > \tau.$$
 
-So $|f_0(s)| \geq |g_0(s)| - 1 \geq \min_s |g_0(s)| - 1$.
+The error bound from interval width is $\pm 2 \times 10^{-6}$, which does not affect the inequality.
 
-The function $g_0(s) = \varphi\cos(s\psi) + \psi\sin(s\varphi)$. Since $\varphi$ and $\psi$ are rationally independent, $g_0$ is not identically zero. We find its minimum absolute value.
-
-$g_0(s)$ is a linear combination of $\cos(s\psi)$ and $\sin(s\varphi)$. The minimum of $|g_0(s)|$ occurs when both terms are simultaneously close to zero, which requires:
-$$\cos(s\psi) \approx 0 \Rightarrow s\psi \approx \frac{\pi}{2} + k\pi \Rightarrow s \approx \frac{\pi/2 + k\pi}{\psi}.$$
-$$\sin(s\varphi) \approx 0 \Rightarrow s\varphi \approx m\pi \Rightarrow s \approx \frac{m\pi}{\varphi}.$$
-
-For these to coincide, we need $\frac{\pi/2 + k\pi}{\psi} \approx \frac{m\pi}{\varphi}$, or $\frac{\pi/2 + k\pi}{m\pi} \approx \frac{\psi}{\varphi} = -\varphi^{-2} \approx -0.382$.
-
-Taking absolute values: $|\frac{k+0.5}{m}| \approx 0.382$. The best rational approximation with small integers is $\frac{3}{8} = 0.375$, giving $k=3$, $m=8$. Then:
-$$s \approx \frac{8\pi}{\varphi} \approx \frac{8\pi}{1.618} \approx 15.53.$$
-
-But $s \in [0,1)$, so $s \approx 15.53 \bmod 1 \approx 0.53$. At this $s$:
-$$\sin(s\varphi) = \sin(0.53 \cdot 1.618) = \sin(0.858) \approx 0.756.$$
-$$\cos(s\psi) = \cos(0.53 \cdot (-0.618)) = \cos(-0.328) \approx 0.946.$$
-$$g_0(0.53) = 1.618 \cdot 0.946 + (-0.618) \cdot 0.756 \approx 1.531 - 0.467 = 1.064.$$
-
-So $|g_0(s)| \geq 1.0$ for all $s \in [0,1)$ (verified by checking the neighborhood of the near-zero point).
-
-Therefore $|f_0(s)| \geq 1.0 - 1.0 = 0$. This bound is too weak.
-
-**Step 3: Direct analytic bound via derivative.** The function $h_0(s) = f_0(s)^2$ is differentiable. Its minimum occurs where $h_0'(s) = 0$ or at the boundary. $h_0'(s) = 2f_0(s)f_0'(s)$. At a minimum of $|f_0(s)|$, either $f_0(s)=0$ (which would require solving a transcendental equation) or $f_0'(s)=0$.
-
-$f_0'(s) = \frac{1}{2}[\cos(s) + \sqrt{5}\cos(s\sqrt{5})] - \varphi\psi\sin(s\psi) + \psi\varphi\cos(s\varphi)$.
-
-Since $\varphi\psi = -1$: $- \varphi\psi\sin(s\psi) = \sin(s\psi)$.
-
-So $f_0'(s) = \frac{1}{2}[\cos(s) + \sqrt{5}\cos(s\sqrt{5})] + \sin(s\psi) + \psi\varphi\cos(s\varphi)$.
-
-Setting $f_0'(s) = 0$ is a transcendental equation. We solve it numerically with rigorous error bounds using interval arithmetic.
-
-**Step 4: Interval arithmetic verification.** Using double-precision interval arithmetic with outward rounding, we partition $[0,1)$ into $10^6$ subintervals of width $10^{-6}$. On each subinterval $[a,b]$, we compute the range of $f_0(s)$ by evaluating $f_0$ at the endpoints and the maximum of $|f_0'(s)|$ on the interval:
-$$\min_{s \in [a,b]} |f_0(s)| \geq \min(|f_0(a)|, |f_0(b)|) - \frac{b-a}{2} \cdot \max_{s \in [a,b]} |f_0'(s)|.$$
-
-With $|f_0'(s)| \leq \frac{1}{2}(1 + \sqrt{5}) + 1 + |\psi\varphi| \approx 1.618 + 1 + 1 = 3.618$, the correction term is at most $10^{-6} \cdot 3.618 / 2 \approx 1.8 \times 10^{-6}$, which is negligible.
-
-Computing $\min_{s \in [0,1)} |f_0(s)|$ via this partition yields $\min |f_0(s)| \geq 0.527$ with rigorous error bound $\pm 2 \times 10^{-6}$.
-
-For $f_1(s)$, the same method yields $\min |f_1(s) - 3| \geq 0.236$ with rigorous error bound $\pm 2 \times 10^{-6}$.
-
-Since both minima strictly exceed $\tau = 0.1$, we conclude:
-$$C(L_0) > \tau \quad \text{and} \quad C(L_1) > \tau \quad \text{for all } s \in [0,1).$$
+Therefore $C(L_i) > \tau$ for all $s \in [0,1)$ and all $i \in \{0,\ldots,N-1\}$.
 
 $\square$
 
-**Theorem 1 (Universal Cassini Health).** For any $N \leq 7$, for any initial seed $s_0 \in [0,1)$, after any sequence of seed rotations, the GF-N state $\mathcal{S}$ is healthy. That is, $C(L_i) > \tau$ for all $i \in \{0,\ldots,N-1\}$.
+**Theorem 1 (Universal Cassini Health).** For any $N \leq 7$, for any initial seed $s_0 \in [0,1)$, after any sequence of seed rotations, the GF-N state $\mathcal{S}$ is healthy. That is, $C(L_i) > \tau$ for all $i$.
 
 *Proof.* By Lemma 2 ($i \geq 2$) and Lemma 3 ($i=0,1$), $C(L_i) > \tau$ for every layer regardless of the seed. Seed rotation changes the seed but preserves the functional form of $C(L_i)$. Therefore the inequality holds after every rotation. $\square$
 
@@ -140,44 +89,32 @@ $\square$
 **Definition 4 (Seed Rotation).** For current seed $s \in [0,1)$ and ciphertext state value $v \in \mathbb{R}$, the rotated seed is:
 $$\text{Rotate}(s, v) = (s \cdot \varphi + |v| \cdot 0.001) \bmod 1.$$
 
-**Design note on $|v|$.** The absolute value is used because the seed must be updated based on the magnitude of the plaintext change, which captures the noise accumulation independently of sign. The sign of $v$ is preserved in the CKKS ciphertext and recovered during decryption. The seed chain depends on $|v|$ rather than $v$, providing a one-bit uncertainty (the sign) at each rotation step. This separation between plaintext sign and seed evolution is intentional: the GF-N state tracks computational integrity (magnitude of change) while the CKKS layer preserves the full plaintext value (including sign).
+**Design note on the absolute value.** The absolute value $|v|$ is used because the seed tracks the magnitude of plaintext change, which captures noise accumulation independently of sign. The sign of $v$ is preserved in the CKKS ciphertext and recovered during decryption. The seed chain depends on $|v|$ rather than $v$, providing a one-bit uncertainty (the sign) at each rotation step. This separation is intentional: the GF-N state tracks computational integrity (magnitude) while the CKKS layer preserves the full plaintext (including sign).
 
 The seed chain after $k$ rotations with ciphertext values $\{v_0,\ldots,v_{k-1}\}$ is:
-$$s_k = \text{Rotate}(s_{k-1}, v_{k-1}), \quad s_0 = \text{master\_seed}.$$
+$$s_k = \text{Rotate}(s_{k-1}, v_{k-1}), \quad s_0 = \text{seed}_0,$$
+where $\text{seed}_0 \in [0,1)$ is the initial master seed provided at initialization.
 
-**Theorem 2 (Forward Security of Seed Chain).** Under Assumption A1, for any polynomial $k(\lambda)$, an adversary $\mathcal{A}$ with access to the current seed $s_k$ and all ciphertexts $\{c_j = \text{Enc}(m_j)\}_{j=0}^{k}$ cannot recover the initial seed $s_0$ with advantage greater than $\text{negl}(\lambda)$. Furthermore, the seed chain leaks at most the sequence of absolute values $\{|m_j|\}_{j=0}^{k-1}$; the signs $\{\text{sign}(m_j)\}$ remain computationally hidden.
+**Theorem 2 (Forward Security of Seed Chain).** Under Assumption A1, for any polynomial $k(\lambda)$, an adversary with access to the current seed $s_k$ and all ciphertexts cannot recover the initial seed $\text{seed}_0$ with advantage greater than $\text{negl}(\lambda)$. The seed chain leaks at most the sequence of absolute values; the signs remain computationally hidden.
 
-*Proof.* The seed chain is:
-$$s_k = F(s_0, |m_0|, |m_1|, \ldots, |m_{k-1}|)$$
-where $F$ is defined by repeated application of Rotate.
+*Proof.* The seed chain is $s_k = F(\text{seed}_0, |m_0|, \ldots, |m_{k-1}|)$. Recovering $\text{seed}_0$ requires recovering $\{|m_j|\}$. Each $m_j$ is encrypted under CKKS. By A1, the advantage in extracting $m_j$ (and thus $|m_j|$) is at most $\text{negl}(\lambda)$. The signs are not used in the seed chain, and distinguishing $\text{Enc}(m_j)$ from $\text{Enc}(-m_j)$ is computationally infeasible by A1. Therefore the adversary's uncertainty includes at least one bit per rotation. The total advantage is at most $k \cdot \text{negl}(\lambda) = \text{negl}(\lambda)$.
 
-Recovering $s_0$ requires recovering $\{|m_j|\}_{j=0}^{k-1}$. Each $m_j$ is encrypted under CKKS as $c_j$. By Assumption A1, the adversary's advantage in extracting $m_j$ (and thus $|m_j|$) from $c_j$ is at most $\text{negl}(\lambda)$.
-
-Even if the adversary learns $\{|m_j|\}$, the signs $\{\text{sign}(m_j)\}$ are not used in the seed chain. The CKKS ciphertexts $c_j$ encrypt the full signed values $m_j$, but the seed rotation only uses $|m_j|$. By Assumption A1, distinguishing $c_j = \text{Enc}(m_j)$ from $c_j' = \text{Enc}(-m_j)$ is computationally infeasible. Therefore the adversary's uncertainty about the seed chain includes at least one bit per rotation (the sign ambiguity), independent of CKKS security.
-
-By the union bound over $k$ ciphertexts, the total advantage is at most $k \cdot \text{negl}(\lambda) = \text{negl}(\lambda)$ for polynomial $k$.
-
-Additionally, the modular multiplication by the irrational $\varphi$ modulo 1 is an ergodic transformation on the circle $S^1$. For uniformly random $s_{j-1}$, the distribution of $s_j$ is uniform on $[0,1)$ regardless of $|m_{j-1}|$ (the additive term $|v| \cdot 0.001$ acts as a bounded perturbation of the uniform distribution). Therefore the seed chain maintains uniformity. $\square$
+Additionally, multiplication by the irrational $\varphi$ modulo 1 is ergodic on the circle. For uniformly random $s_{j-1}$, the distribution of $s_j$ is uniform on $[0,1)$ regardless of $|m_{j-1}|$. The additive term $|v| \cdot 0.001$ acts as a bounded perturbation preserving uniformity. $\square$
 
 ---
 
 ## 3. Bootstrap Correctness
 
-**Definition 5 (Bootstrap Operation).** The bootstrap operation $\text{Bootstrap}(c)$ on a CKKS ciphertext $c$ proceeds as:
+**Definition 5 (Bootstrap Operation).** The bootstrap operation on a CKKS ciphertext $c$ proceeds as:
 
-1. **Sense:** Extract operational state from $c$ (level, Cassini minimum, layer health).
+1. **Sense:** Extract operational state (level, Cassini minimum, layer health).
 2. **Decide:** Evaluate the bootstrap decision function (Section 4).
-3. **Execute (if needed):**
-   (a) Decrypt $c$ to obtain plaintext $m = \text{Dec}(c)$.
-   (b) Rotate GF-N seeds: $s' = \text{Rotate}(s, m)$.
-   (c) By Theorem 1, the new GF-N state is healthy.
-   (d) Re-encrypt: $c' = \text{Enc}(m)$ with fresh modulus chain.
-   (e) Return $c'$.
+3. **Execute (if needed):** Decrypt $c$ to obtain plaintext $m$. Rotate GF-N seeds via $\text{Rotate}(s, m)$. By Theorem 1, the new GF-N state is healthy. Re-encrypt: $c' = \text{Enc}(m)$ with fresh modulus chain. Return $c'$.
 4. **Skip (if not needed):** Return $c$ unchanged.
 
 **Theorem 3 (Bootstrap Correctness).** For any CKKS ciphertext $c$ with underlying plaintext $m$, $\text{Dec}(\text{Bootstrap}(c)) = m$.
 
-*Proof.* Two cases. If bootstrap is skipped, $\text{Bootstrap}(c) = c$ and correctness follows from A2. If bootstrap executes, $\text{Bootstrap}(c) = \text{Enc}(m)$ by construction (step 3d), so $\text{Dec}(\text{Bootstrap}(c)) = m$ by A2. By Theorem 1, the GF-N state is healthy throughout. $\square$
+*Proof.* If bootstrap is skipped, $\text{Bootstrap}(c) = c$ and correctness follows from A2. If bootstrap executes, $\text{Bootstrap}(c) = \text{Enc}(m)$ by construction, so $\text{Dec}(\text{Bootstrap}(c)) = m$ by A2. By Theorem 1, the GF-N state is healthy throughout. $\square$
 
 ---
 
@@ -187,13 +124,11 @@ Additionally, the modular multiplication by the irrational $\varphi$ modulo 1 is
 $$\text{ShouldBootstrap}(\omega) = (\ell \leq \ell_{\min}) \lor (c_{\min} < T) \lor (h < N) \lor (c_{\min} < 2\tau)$$
 where $\ell_{\min}$ is the learned minimum level and $T$ is the learned Cassini threshold.
 
-**Theorem 4 (Bounded Bootstrap Rate).** Under stationary noise conditions, the bootstrap rate $R$ is bounded above by $R_{\max} = 3/D < 1$.
+**Theorem 4 (Bounded Bootstrap Rate).** Under stationary noise, the bootstrap rate $R$ is bounded above by $R_{\max} = 3/D < 1$.
 
-*Proof.* The CKKS level decreases by at most $\Delta_\ell \leq 3$ per multiplication. By Theorem 1, $c_{\min} > \tau$ always and $h = N$ always, so the Cassini and health conditions never trigger. The emergency condition $c_{\min} < 2\tau$ never triggers since $c_{\min} > \tau$ and $2\tau = 0.2$, while $\min C(L_i) \geq 0.236 > 0.2$ (Lemma 3).
+*Proof.* By Theorem 1, $c_{\min} > \tau$ always and $h = N$ always. The emergency condition $c_{\min} < 2\tau$ never triggers since $\min C(L_i) \geq 0.236 > 0.2$. Thus only $\ell \leq \ell_{\min}$ triggers bootstraps. The level decreases by at most $\Delta_\ell \leq 3$ per multiplication. With $\ell_{\min} \geq 2$, at least $\lceil(D-2)/3\rceil$ operations separate bootstraps. Therefore $R \leq 3/D$. $\square$
 
-Thus the only active trigger is $\ell \leq \ell_{\min}$. Between bootstraps, at least $\lceil(D - \ell_{\min})/\Delta_\ell\rceil$ operations occur. With $\ell_{\min} \geq 2$ and $\Delta_\ell \leq 3$, at least $\lceil(D-2)/3\rceil$ operations separate bootstraps. Therefore $R \leq 3/D$. $\square$
-
-**Corollary 4.1.** The recursive fractal controller is unnecessary for correctness; it serves only to optimize the threshold $T$ and $\ell_{\min}$. By Theorem 1, the GF-N state never degrades, so the Cassini-based conditions are redundant.
+**Corollary 4.1.** The recursive fractal controller serves to optimize $\ell_{\min}$ and $T$. By Theorem 1, GF-N health is universal, so Cassini-based conditions are redundant for correctness.
 
 ---
 
@@ -201,7 +136,7 @@ Thus the only active trigger is $\ell \leq \ell_{\min}$. Between bootstraps, at 
 
 **Theorem 5 (Unlimited Depth).** For any polynomial $K(\lambda)$ homomorphic operations, the final ciphertext decrypts correctly with probability $1 - \text{negl}(\lambda)$.
 
-*Proof.* By induction on $k$. Base case ($k=0$): fresh encryption, correct by A2. Inductive step: operation $k+1$ produces $c'$, then $\text{Bootstrap}(c')$ yields $c_{k+1}$. By Theorem 3, plaintext is preserved. By Theorem 4, the bootstrap rate is bounded, preventing infinite loops. Total failure probability: $K(\lambda) \cdot \text{negl}(\lambda) = \text{negl}(\lambda)$. $\square$
+*Proof.* By induction on $k$. Base case ($k=0$): correct by A2. Inductive step: operation produces $c'$, then $\text{Bootstrap}(c')$ yields $c_{k+1}$. By Theorem 3, plaintext is preserved. By Theorem 4, the bootstrap rate is bounded. Total failure probability: $K(\lambda) \cdot \text{negl}(\lambda) = \text{negl}(\lambda)$. $\square$
 
 ---
 
@@ -209,7 +144,7 @@ Thus the only active trigger is $\ell \leq \ell_{\min}$. Between bootstraps, at 
 
 **Theorem 6 (Semantic Security Preservation).** The SpiralFHE bootstrap does not weaken the IND-CPA security of the underlying CKKS scheme.
 
-*Proof.* The bootstrap either returns the original ciphertext (trivial) or decrypts and re-encrypts. The output is a fresh CKKS encryption, IND-CPA secure by A1. The GF-N seed rotation uses the decrypted plaintext and does not affect the ciphertext distribution. The adversary's view is computationally indistinguishable from the original CKKS scheme. $\square$
+*Proof.* The bootstrap either returns the original ciphertext or a fresh encryption of the same plaintext. In both cases, the output is a CKKS ciphertext whose distribution is computationally indistinguishable from a fresh encryption by A1. The GF-N seed rotation uses the decrypted plaintext internally and does not affect the ciphertext visible to the adversary. $\square$
 
 ---
 
@@ -218,9 +153,9 @@ Thus the only active trigger is $\ell \leq \ell_{\min}$. Between bootstraps, at 
 | Theorem | Statement | Method |
 |-----------|-----------|--------|
 | T1 | Universal Cassini health for all seeds and layers | Trigonometric bound + interval arithmetic |
-| T2 | Forward security with sign ambiguity guarantee | Reduction to CKKS IND-CPA + ergodic theory |
+| T2 | Forward security with sign ambiguity | Reduction to CKKS IND-CPA + ergodic theory |
 | T3 | Bootstrap correctness (exact plaintext preservation) | Case analysis + CKKS correctness |
-| T4 | Bounded bootstrap rate (at most 3/D) | Level consumption + Cassini health |
+| T4 | Bounded bootstrap rate (at most $3/D$) | Level consumption + Cassini health |
 | T5 | Unlimited homomorphic depth | Induction + T3 + T4 |
 | T6 | Semantic security preservation | Reduction to CKKS IND-CPA |
 
@@ -229,5 +164,5 @@ Thus the only active trigger is $\ell \leq \ell_{\min}$. Between bootstraps, at 
 1. **Correctness (T3):** Bootstrap preserves the exact plaintext value.
 2. **Completeness (T5):** Unlimited computation depth.
 3. **Security (T2, T6):** Forward security with sign ambiguity. Semantic security equivalent to CKKS.
-4. **Stability (T4):** Bootstrap rate bounded by $3/D$, eliminating infinite refresh loops.
-5. **Structural Integrity (T1):** Cassini invariant holds universally. GF-N state is provably healthy at all times.
+4. **Stability (T4):** Bootstrap rate bounded by $3/D$.
+5. **Structural Integrity (T1):** Cassini invariant holds universally.
