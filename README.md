@@ -27,7 +27,7 @@ Spiral FHE takes a fundamentally different approach:
 
 ```
 bootstrap_zero(): 0.07 us/call  — Zero plaintext exposure
-bootstrap_io():   3.91 us/call  — Full noise refresh + structural integrity
+bootstrap_full():   3.91 us/call  — Full noise refresh + structural integrity
 ```
 
 ## Key Features
@@ -67,7 +67,7 @@ auto result = fhe.decrypt(ct);
 | `bootstrap_instant`  | 0.04     | Yes       | No      |
 | `bootstrap_single`   | 0.08     | Yes       | Yes     |
 | `bootstrap_zero`     | 0.07     | No        | Yes     |
-| `bootstrap_io`       | 3.91     | Yes       | Yes     |
+| `bootstrap_full`       | 3.91     | Yes       | Yes     |
 | `bootstrap_batched`  | Amortized| Yes       | Yes     |
 
 ## Mathematical Foundation

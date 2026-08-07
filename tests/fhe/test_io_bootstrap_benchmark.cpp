@@ -34,8 +34,8 @@ double fractal_encode_collapse(double raw_val, int depth, bool use_phi) {
 // SIMULATED BOOTSTRAP FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
-// Current: bootstrap_io() — decrypts GF-N, exposes plaintext briefly
-double sim_bootstrap_io(double gf_ciphertext, int depth, bool use_phi) {
+// Current: bootstrap_full() — decrypts GF-N, exposes plaintext briefly
+double sim_bootstrap_full(double gf_ciphertext, int depth, bool use_phi) {
     // Phase 1: CKKS Decrypt (simulated — already have GF ciphertext)
     
     // Phase 2: GF-N Decrypt → PLAINTEXT EXPOSED
@@ -61,7 +61,7 @@ double sim_bootstrap_zero(double gf_ciphertext, int depth, bool use_phi) {
     double cassini = std::abs(gf_ciphertext * PHI + 1.0);
     if (cassini < 0.1) {
         // Fall back to full decrypt (rare)
-        return sim_bootstrap_io(gf_ciphertext, depth, use_phi);
+        return sim_bootstrap_full(gf_ciphertext, depth, use_phi);
     }
     
     // Phase 3: Seed Rotation (NO DECRYPT)
@@ -108,7 +108,7 @@ int main() {
     // Warmup
     for (int i = 0; i < 1000; i++) {
         double x = val(gen);
-        sim_bootstrap_io(x, depth, true);
+        sim_bootstrap_full(x, depth, true);
         sim_bootstrap_zero(x, depth, true);
     }
     
@@ -116,7 +116,7 @@ int main() {
     auto start_io = std::chrono::steady_clock::now();
     for (int i = 0; i < trials; i++) {
         double x = val(gen);
-        sim_bootstrap_io(x, depth, true);
+        sim_bootstrap_full(x, depth, true);
     }
     auto end_io = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_io = end_io - start_io;
@@ -134,7 +134,7 @@ int main() {
     double zero_per_call = elapsed_zero.count() / trials * 1e6;
     double speedup = elapsed_io.count() / elapsed_zero.count();
     
-    std::cout << "║  bootstrap_io():  " << std::fixed << std::setprecision(2) 
+    std::cout << "║  bootstrap_full():  " << std::fixed << std::setprecision(2) 
               << elapsed_io.count() << "s total, " << io_per_call << " μs/call\n";
     std::cout << "║  bootstrap_zero(): " << elapsed_zero.count() << "s total, " 
               << zero_per_call << " μs/call\n";
@@ -154,8 +154,8 @@ int main() {
     
     for (int i = 0; i < ks_samples; i++) {
         double x = val(gen);
-        io_phi.push_back(sim_bootstrap_io(x, depth, true));
-        io_psi.push_back(sim_bootstrap_io(x, depth, false));
+        io_phi.push_back(sim_bootstrap_full(x, depth, true));
+        io_psi.push_back(sim_bootstrap_full(x, depth, false));
         zero_phi.push_back(sim_bootstrap_zero(x, depth, true));
         zero_psi.push_back(sim_bootstrap_zero(x, depth, false));
     }
@@ -177,7 +177,7 @@ int main() {
     double ks_zero = ks_like(zero_phi, zero_psi);
     double crit = 1.36 / std::sqrt(ks_samples);
     
-    std::cout << "║  bootstrap_io():  KS=" << std::fixed << std::setprecision(6) << ks_io 
+    std::cout << "║  bootstrap_full():  KS=" << std::fixed << std::setprecision(6) << ks_io 
               << " → " << (ks_io < crit ? "✅ INDISTINGUISHABLE" : "❌ DISTINGUISHABLE") << "\n";
     std::cout << "║  bootstrap_zero(): KS=" << ks_zero 
               << " → " << (ks_zero < crit ? "✅ INDISTINGUISHABLE" : "❌ DISTINGUISHABLE") << "\n";
@@ -190,7 +190,7 @@ int main() {
     std::cout << "╔══════════════════════════════════════════════════════════════╗\n";
     std::cout << "║  PLAINTEXT EXPOSURE ANALYSIS                                 ║\n";
     std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
-    std::cout << "║  bootstrap_io():                                            ║\n";
+    std::cout << "║  bootstrap_full():                                            ║\n";
     std::cout << "║    ❌ Plaintext in memory during Phase 2-3                  ║\n";
     std::cout << "║    ❌ GF-N decrypt → plaintext variable                     ║\n";
     std::cout << "║    🛡️  Side-channel + Blackhole defense active              ║\n";
@@ -209,7 +209,7 @@ int main() {
     std::cout << "║  BENCHMARK VERDICT                                           ║\n";
     std::cout << "╠══════════════════════════════════════════════════════════════╣\n";
     std::cout << "║  Speed: " << std::fixed << std::setprecision(1) << speedup 
-              << "x " << (speedup > 1.0 ? "faster" : "slower") << " than bootstrap_io()\n";
+              << "x " << (speedup > 1.0 ? "faster" : "slower") << " than bootstrap_full()\n";
     std::cout << "║  iO preserved: " << (ks_zero < crit ? "✅ YES" : "❌ NO") << "\n";
     std::cout << "║  Unlimited depth: ✅ PRESERVED\n";
     std::cout << "║  Plaintext exposure: ✅ ZERO\n";
