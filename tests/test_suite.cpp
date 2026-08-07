@@ -28,7 +28,8 @@ void run_test(const TestConfig& config) {
     auto sc = create_fhe_context(config.ring_dim, config.depth);
 
     std::cout << "Config: ring=" << config.ring_dim << " depth=" << config.depth 
-              << " ops=" << config.max_ops << " plaintext=" << std::fixed << std::setprecision(4) << config.plaintext << "\n\n";
+              << " ops=" << config.max_ops << " plaintext=" << std::fixed << std::setprecision(4) << config.plaintext 
+              << " layers=" << N << "\n\n";
 
     CompleteBootstrap<N, 30> cb;
     cb.initialize(0.6180339887498948482);
@@ -70,11 +71,7 @@ void run_test(const TestConfig& config) {
 
         if (i % (config.max_ops / 5) == 0 || i == config.max_ops) {
             double val = 0.0;
-            try {
-                val = decrypt(sc, ct);
-            } catch (const std::exception& e) {
-                alive = false;
-            }
+            try { val = decrypt(sc, ct); } catch (...) { alive = false; }
 
             MetaControllerState meta = cb.get_meta_state();
             double rate = (100.0 * cb.get_bootstrap_count() / i);
@@ -95,7 +92,6 @@ void run_test(const TestConfig& config) {
 
     auto end_time = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(end_time - start_time).count();
-
     double final_val = 0.0;
     try { final_val = decrypt(sc, ct); } catch (...) { alive = false; }
 
@@ -108,28 +104,24 @@ void run_test(const TestConfig& config) {
 int main() {
     std::cout << "\n";
     std::cout << "================================================================================\n";
-    std::cout << "  SpiralFHE — Test Suite\n";
-    std::cout << "  Self-Optimizing Bootstrap with Cassini-Verified Seed Rotation\n";
+    std::cout << "  SpiralFHE — Test Suite (Cassini: a in {1,3,4,5,6,7})\n";
     std::cout << "================================================================================\n";
 
     std::vector<TestConfig> tests = {
-        {65536, 16, 20, 0.42, "add_const", "Add Constants (0.42 + 0.5 per op)"},
-        {65536, 16, 20, 0.42, "mult_const", "Multiply Constants (0.42 * 0.5 per op)"},
+        {65536, 16, 20, 0.42, "add_const", "Add Constants"},
+        {65536, 16, 20, 0.42, "mult_const", "Multiply Constants"},
         {65536, 16, 10, 0.42, "rotate", "Cyclic Rotations"},
         {65536, 16, 10, 0.42, "sum", "Sum All Slots"},
-        {65536, 16, 20, 0.42, "add_sub_cycle", "Add/Sub Cycles (value preservation)"},
-        {65536, 32, 15, 0.42, "chained", "Chained Ops (Add -> Mult -> Sub)"},
-        {65536, 16, 15, 0.42, "square", "Squaring (stress test)"},
-        {65536, 32, 30, 24325.0, "add_sub_cycle", "Value Preservation (24325.00)"},
+        {65536, 16, 20, 0.42, "add_sub_cycle", "Add/Sub Cycles"},
+        {65536, 32, 15, 0.42, "chained", "Chained Ops"},
+        {65536, 16, 15, 0.42, "square", "Squaring"},
+        {65536, 32, 30, 24325.0, "add_sub_cycle", "Value Preservation"},
     };
 
-    for (auto& t : tests) {
-        run_test<5>(t);
-    }
+    for (auto& t : tests) run_test<5>(t);
 
     std::cout << "\n" << std::string(90, '=') << "\n";
     std::cout << "  Test Suite Complete\n";
     std::cout << std::string(90, '=') << "\n\n";
-
     return 0;
 }
