@@ -1,334 +1,470 @@
 #pragma once
-#include "../core/constants.h"
-#include "../utils/safe_math.h"
-#include "../crypto/golden_fibonacci.h"
-#include "../crypto/fractal_chaos.h"
-#include "../crypto/hierarchical_seed.h"
-#include "../config/gf_n_encryption.h"
-#include "../fhe/fhe_core.h"
-#include <chrono>
-#include <random>
+#include <cmath>
+#include <cstdint>
+#include <deque>
 #include <vector>
 #include <algorithm>
-#include <thread>
+#include <numeric>
+#include <sys/time.h>
+#include <immintrin.h>
+#include "../core/constants.h"
 
-// ==========================================
-// SPIRAL BOOTSTRAP — Zero-Plaintext FHE Bootstrap
-// ==========================================
-// phi * psi = -1 enables seed rotation without plaintext exposure.
-// Cassini identity verifies integrity without decryption.
-// Five bootstrap modes for different security/performance trade-offs.
-// ==========================================
-
-// Side-Channel Defense
-struct SideChannelEngine {
-    static double chaos_mask(double value) {
-        return value + std::sin(value * PHI) * 0.0001;
+// Side channel defense: constant-time operations and memory barriers.
+class SideChannelDefense {
+private:
+    static volatile uint64_t barrier_memory;
+public:
+    static void force_const_time() {
+        volatile uint64_t acc = barrier_memory;
+        for (volatile int i = 0; i < 50000; i++) {
+            acc ^= (acc << 7) | (acc >> 57);
+            acc *= 0x9E3779B97F4A7C15ULL;
+            __asm__ volatile("" : "+r"(acc) : : "memory");
+        }
+        barrier_memory = acc;
     }
-    static double chaos_unmask(double masked_value) {
-        return masked_value - std::sin(masked_value * PHI) * 0.0001;
-    }
-    static void constant_time_barrier() {
-        volatile long long barrier = 0;
-        for (volatile int i = 0; i < 50000; i++) barrier += i * 0x9e3779b9;
-        (void)barrier;
+    static void memory_barrier() { __asm__ volatile("mfence" ::: "memory"); }
+    static void prefault_stack() {
+        volatile char buf[4096];
+        for (int i = 0; i < 4096; i += 64) buf[i] = 0;
+        (void)buf;
     }
 };
+volatile uint64_t SideChannelDefense::barrier_memory = 0xDEADBEEFCAFEBABE;
 
-// Bootstrap Mode Selector
-enum BootstrapMode {
-    BOOTSTRAP_INSTANT,
-    BOOTSTRAP_SINGLE,
-    BOOTSTRAP_ZERO,
-    BOOTSTRAP_FULL,
-    BOOTSTRAP_AUTO
+// GF-N Layer: Golden Fibonacci encryption layer with Cassini invariant.
+struct GFNLayer {
+    double y1, y2, seed, cassini;
+    bool valid;
+    GFNLayer() : y1(0.0), y2(0.0), seed(0.0), cassini(0.0), valid(false) {}
 };
 
-// Spiral Bootstrap — FHE Bootstrap Engine
-struct SpiralBootstrap {
-    GFNEncryption gf_n;
-    GoldenFibonacci gf;
+template<int N>
+class GFNState {
+private:
+    GFNLayer layers[N];
     double master_seed;
+    double cached_seed;
+    int rotation_count;
 
-    int N_gf_layers;
-    int N_spiral_rounds;
-    int N_spiral_depth;
-    int N_timing_iterations;
+public:
+    GFNState() : master_seed(0.0), cached_seed(0.0), rotation_count(0) {}
 
-    double N_timing_base_delay;
-    double N_timing_chaos_r;
-    bool enable_sidechannel;
-
-    double spiral_phi_state;
-    double spiral_psi_state;
-    std::mt19937 spiral_gen;
-    int bootstrap_count;
-
-    std::vector<double> stored_y2_trail;
-    double stored_gf_ciphertext;
-    bool has_stored_state;
-
-    // Constructor
-    SpiralBootstrap() {
-        init(42.0, 5);
-    }
-
-    void init(double seed, int gf_layers = 5) {
+    void initialize(double seed) {
         master_seed = seed;
-        N_gf_layers = gf_layers;
-
-        N_spiral_rounds = fibonacci(5);
-        N_spiral_depth = fibonacci(6);
-        N_timing_iterations = fibonacci(4);
-
-        N_timing_base_delay = 0.00005;
-        N_timing_chaos_r = 3.99;
-        enable_sidechannel = true;
-        bootstrap_count = 0;
-
-        gf_n.init_enterprise(seed, N_gf_layers);
-        gf.init(seed, N_gf_layers * 10);
-        has_stored_state = false;
-
-        spiral_phi_state = SafeMath::fmod_safe(seed * PHI);
-        spiral_psi_state = SafeMath::fmod_safe(seed * PSI);
-        std::random_device rd;
-        spiral_gen.seed(rd());
+        cached_seed = seed;
+        double cs = seed;
+        for (int i = 0; i < N; i++) {
+            layers[i].seed = cs;
+            layers[i].y1 = sin(cs * SpiralConstants::PHI);
+            layers[i].y2 = cos(cs * SpiralConstants::PSI);
+            layers[i].cassini = fabs((layers[i].y1 + (i+1)*SpiralConstants::PHI) * 
+                                     (layers[i].y2 + (i+1)*SpiralConstants::PSI) + 1.0);
+            layers[i].valid = (layers[i].cassini > SpiralConstants::CASSINI_THRESHOLD);
+            cs = fmod(cs * SpiralConstants::PHI + 0.618, 1.0);
+        }
+        rotation_count = 0;
     }
 
-    // ==========================================
-    // BOOTSTRAP INSTANT — Fastest possible refresh
-    // ==========================================
-    // Zero-depth, minimal operations.
-    // No GF-N verify. No Cassini check. Just CKKS re-encrypt.
-    // Use case: High-frequency, trusted environment.
-    // ==========================================
-    Ciphertext<DCRTPoly> bootstrap_instant(const Ciphertext<DCRTPoly>& encrypted_input, SecureContext& sc) {
-        bootstrap_count++;
-        Plaintext ckks_plain;
-        sc.cc->Decrypt(sc.kp.secretKey, encrypted_input, &ckks_plain);
-        double value = ckks_plain->GetCKKSPackedValue()[0].real();
-        return sc.cc->Encrypt(sc.kp.publicKey,
-            sc.cc->MakeCKKSPackedPlaintext(std::vector<double>{value}));
+    double compute_cassini_for_layer(int i) const {
+        if (i < 0 || i >= N) return 0.0;
+        double pc = layers[i].y1 + (i+1) * SpiralConstants::PHI;
+        double qc = layers[i].y2 + (i+1) * SpiralConstants::PSI;
+        return fabs(pc * qc + 1.0);
     }
 
-    // ==========================================
-    // BOOTSTRAP SINGLE — Balanced approach
-    // ==========================================
-    // GF-N verify + seed rotation. No batching overhead.
-    // Use case: Standard FHE.
-    // ==========================================
-    Ciphertext<DCRTPoly> bootstrap_single(const Ciphertext<DCRTPoly>& encrypted_input, SecureContext& sc) {
-        bootstrap_count++;
-        Plaintext ckks_plain;
-        sc.cc->Decrypt(sc.kp.secretKey, encrypted_input, &ckks_plain);
-        double value = ckks_plain->GetCKKSPackedValue()[0].real();
-
-        double cassini = std::abs(value * PHI + 1.0);
-        if (cassini < 0.1) {
-            return encrypted_input;
-        }
-
-        static double cached_seed = master_seed;
-        cached_seed = std::fmod(cached_seed * PHI + value * 0.001, 1.0);
-
-        return sc.cc->Encrypt(sc.kp.publicKey,
-            sc.cc->MakeCKKSPackedPlaintext(std::vector<double>{value}));
-    }
-
-    // ==========================================
-    // BOOTSTRAP ZERO — Zero plaintext exposure
-    // ==========================================
-    // Seed rotation without decryption to plaintext.
-    // Cassini verified directly from GF ciphertext.
-    // Use case: Zero-trust environments.
-    // ==========================================
-    Ciphertext<DCRTPoly> bootstrap_zero(const Ciphertext<DCRTPoly>& encrypted_input, SecureContext& sc) {
-        bootstrap_count++;
-
-        // Phase 1: Decrypt CKKS to GF Ciphertext (NOT plaintext)
-        Plaintext ckks_plain;
-        sc.cc->Decrypt(sc.kp.secretKey, encrypted_input, &ckks_plain);
-        double gf_ciphertext = ckks_plain->GetCKKSPackedValue()[0].real();
-
-        // Phase 2: Cassini Verify from GF ciphertext
-        GFNEncryption::CipherText gf_ct;
-        gf_ct.y1 = gf_ciphertext;
-        gf_ct.y2_trail = has_stored_state ? stored_y2_trail :
-                         std::vector<double>(N_gf_layers, gf_ciphertext);
-
-        double cassini_val = 0;
-        for (int i = 0; i < N_gf_layers; i++) {
-            double y1 = gf_ct.y1;
-            double y2 = gf_ct.y2_trail[i];
-            double phi_y1 = y1 + (i + 1) * PHI;
-            double psi_y2 = y2 + (i + 1) * PSI;
-            cassini_val = std::abs(phi_y1 * psi_y2 + 1.0);
-            if (cassini_val < 0.1) {
-                return bootstrap_single(encrypted_input, sc);
-            }
-        }
-
-        // Phase 3: Seed Rotation (NO plaintext)
-        static double cached_seed = master_seed;
-        cached_seed = std::fmod(cached_seed * PHI + gf_ciphertext * 0.001, 1.0);
-        gf_n.init_enterprise(cached_seed, N_gf_layers);
-
-        // Phase 4: Re-encrypt GF with new seeds
-        GFNEncryption::CipherText fresh_ct;
-        fresh_ct.y1 = gf_ct.y1;
-        fresh_ct.y2_trail = gf_ct.y2_trail;
-
-        double seed_delta = std::fmod(cached_seed - master_seed, 1.0);
-        fresh_ct.y1 = std::fmod(fresh_ct.y1 + seed_delta * PHI, 1.0);
-        for (size_t i = 0; i < fresh_ct.y2_trail.size(); i++) {
-            fresh_ct.y2_trail[i] = std::fmod(fresh_ct.y2_trail[i] + seed_delta * PSI, 1.0);
-        }
-
-        store_gf_state(fresh_ct);
-
-        // Phase 5: Side-Channel Defense
-        double final_gf = fresh_ct.y1;
-        if (enable_sidechannel) {
-            SideChannelEngine::constant_time_barrier();
-            final_gf = SideChannelEngine::chaos_mask(final_gf);
-            final_gf = SideChannelEngine::chaos_unmask(final_gf);
-            SideChannelEngine::constant_time_barrier();
-        }
-
-        // Phase 6: CKKS Re-encrypt with fresh noise budget
-        return sc.cc->Encrypt(sc.kp.publicKey,
-            sc.cc->MakeCKKSPackedPlaintext(std::vector<double>{final_gf}));
-    }
-
-    // ==========================================
-    // BOOTSTRAP FULL — Full refresh with verification
-    // ==========================================
-    // GF-N decrypt/re-encrypt with Cassini verification.
-    // Use case: Maximum security.
-    // ==========================================
-    Ciphertext<DCRTPoly> bootstrap_full(const Ciphertext<DCRTPoly>& encrypted_input, SecureContext& sc) {
-        bootstrap_count++;
-
-        // Phase 1: Decrypt CKKS to GF Ciphertext
-        Plaintext ckks_plain;
-        sc.cc->Decrypt(sc.kp.secretKey, encrypted_input, &ckks_plain);
-        double gf_ciphertext = ckks_plain->GetCKKSPackedValue()[0].real();
-
-        // Phase 2: GF-N Decrypt
-        GFNEncryption::CipherText gf_ct;
-        gf_ct.y1 = gf_ciphertext;
-        gf_ct.y2_trail = has_stored_state ? stored_y2_trail :
-                         std::vector<double>(N_gf_layers, gf_ciphertext);
-        double plaintext = gf_n.decrypt(gf_ct);
-        verify_cassini();
-
-        // Phase 3: Side-Channel Defense
-        if (enable_sidechannel) {
-            SideChannelEngine::constant_time_barrier();
-            plaintext = SideChannelEngine::chaos_mask(plaintext);
-        }
-
-        // Phase 4: Unmask
-        if (enable_sidechannel) {
-            plaintext = SideChannelEngine::chaos_unmask(plaintext);
-            SideChannelEngine::constant_time_barrier();
-        }
-
-        // Phase 5: Re-encrypt with fresh seeds
-        static double cached_seed = master_seed;
-        cached_seed = std::fmod(cached_seed * PHI + plaintext * 0.001, 1.0);
-        gf_n.init_enterprise(cached_seed, N_gf_layers);
-        auto fresh_gf = gf_n.encrypt_pair(plaintext);
-        store_gf_state(gf_n.encrypt(plaintext));
-
-        return sc.cc->Encrypt(sc.kp.publicKey,
-            sc.cc->MakeCKKSPackedPlaintext(std::vector<double>{fresh_gf.first}));
-    }
-
-    // ==========================================
-    // BOOTSTRAP BATCHED — Process multiple ciphertexts
-    // ==========================================
-    // Amortize CKKS operations across N ciphertexts.
-    // Use case: Bulk computation, data pipeline.
-    // ==========================================
-    std::vector<Ciphertext<DCRTPoly>> bootstrap_batched(
-        const std::vector<Ciphertext<DCRTPoly>>& encrypted_inputs, SecureContext& sc) {
-
-        bootstrap_count += encrypted_inputs.size();
-        std::vector<Ciphertext<DCRTPoly>> results;
-        results.reserve(encrypted_inputs.size());
-
-        std::vector<double> values;
-        for (const auto& ct : encrypted_inputs) {
-            Plaintext ckks_plain;
-            sc.cc->Decrypt(sc.kp.secretKey, ct, &ckks_plain);
-            values.push_back(ckks_plain->GetCKKSPackedValue()[0].real());
-        }
-
-        static double cached_seed = master_seed;
-        double seed_delta = std::fmod(cached_seed * PHI, 1.0);
-        cached_seed = std::fmod(cached_seed + seed_delta, 1.0);
-
-        for (const auto& val : values) {
-            results.push_back(sc.cc->Encrypt(sc.kp.publicKey,
-                sc.cc->MakeCKKSPackedPlaintext(std::vector<double>{val})));
-        }
-
-        return results;
-    }
-
-    // ==========================================
-    // BOOTSTRAP SELECTOR
-    // ==========================================
-    Ciphertext<DCRTPoly> bootstrap_select(
-        const Ciphertext<DCRTPoly>& encrypted_input, SecureContext& sc,
-        BootstrapMode mode = BOOTSTRAP_AUTO) {
-
-        switch (mode) {
-            case BOOTSTRAP_INSTANT:
-                return bootstrap_instant(encrypted_input, sc);
-            case BOOTSTRAP_SINGLE:
-                return bootstrap_single(encrypted_input, sc);
-            case BOOTSTRAP_ZERO:
-                return bootstrap_zero(encrypted_input, sc);
-            case BOOTSTRAP_FULL:
-                return bootstrap_full(encrypted_input, sc);
-            case BOOTSTRAP_AUTO:
-            default:
-                return bootstrap_zero(encrypted_input, sc);
-        }
-    }
-
-    // ==========================================
-    // Helpers
-    // ==========================================
-    void store_gf_state(const GFNEncryption::CipherText& ct) {
-        stored_y2_trail = ct.y2_trail;
-        stored_gf_ciphertext = ct.y1;
-        has_stored_state = true;
-    }
-
-    bool verify_cassini() {
-        for (int i = 0; i < N_gf_layers; i++)
-            if (gf_n.gf_layers[i].cassini < 0.1) return false;
+    bool verify_all_layers() const {
+        for (int i = 0; i < N; i++)
+            if (compute_cassini_for_layer(i) < SpiralConstants::CASSINI_THRESHOLD) return false;
         return true;
     }
 
-    static int fibonacci(int n) {
-        if (n <= 0) return 1;
-        if (n == 1) return 2;
-        int a = 1, b = 2;
-        for (int i = 2; i <= n; i++) {
-            int c = a + b;
-            a = b;
-            b = c;
-        }
-        return b;
+    int verify_and_count() const {
+        int v = 0;
+        for (int i = 0; i < N; i++)
+            if (compute_cassini_for_layer(i) >= SpiralConstants::CASSINI_THRESHOLD) v++;
+        return v;
     }
 
-    std::string status() {
-        return "SpiralBootstrap: " + std::to_string(N_gf_layers) + " GF layers, " +
-               "Cassini=" + std::string(verify_cassini() ? "OK" : "FAIL");
+    double get_min_cassini() const {
+        double m = 1e10;
+        for (int i = 0; i < N; i++) {
+            double c = compute_cassini_for_layer(i);
+            if (c < m) m = c;
+        }
+        return m;
+    }
+
+    void rotate_seeds(double gf_state) {
+        SideChannelDefense::prefault_stack();
+        SideChannelDefense::force_const_time();
+        double new_seed = fmod(cached_seed * SpiralConstants::PHI + 
+                               gf_state * SpiralConstants::SEED_DELTA_WEIGHT, 1.0);
+        SideChannelDefense::force_const_time();
+        cached_seed = new_seed;
+        double cs = cached_seed;
+        for (int i = 0; i < N; i++) {
+            layers[i].seed = cs;
+            layers[i].y1 = sin(cs * SpiralConstants::PHI);
+            layers[i].y2 = cos(cs * SpiralConstants::PSI);
+            layers[i].cassini = compute_cassini_for_layer(i);
+            layers[i].valid = (layers[i].cassini > SpiralConstants::CASSINI_THRESHOLD);
+            cs = fmod(cs * SpiralConstants::PHI + 0.618, 1.0);
+        }
+        rotation_count++;
+        SideChannelDefense::memory_barrier();
+    }
+
+    double get_cached_seed() const { return cached_seed; }
+    int get_rotation_count() const { return rotation_count; }
+    constexpr int get_layer_count() const { return N; }
+    bool is_healthy() const { return verify_all_layers(); }
+};
+
+// Operational state snapshot for the controller.
+struct OperationalState {
+    double cassini_min;
+    int healthy_layers;
+    int total_layers;
+    uint32_t ckks_level;
+    uint32_t ckks_max_level;
+    int ops_since_bootstrap;
+};
+
+// Controller state: PHI metric and bootstrap decision.
+struct ControllerState {
+    double integrated_phi;
+    double stability;
+    int healthy_layers;
+    bool should_bootstrap;
+};
+
+// Meta-controller state: parameter tuning.
+struct MetaControllerState {
+    double phi_convergence_rate;
+    double threshold_stability;
+    double learning_rate;
+    double adjusted_threshold;
+    uint32_t learned_min_level;
+    bool parameters_stable;
+};
+
+// Fractal detector: self-similarity detection for convergence.
+template<size_t WindowSize = 20>
+class FractalDetector {
+private:
+    static constexpr double SIMILARITY_THRESHOLD = 0.95;
+    std::deque<double> similarity_history;
+    bool fractal_detected;
+    int depth_reached;
+
+public:
+    FractalDetector() : fractal_detected(false), depth_reached(0) {}
+
+    double compute_correlation(const std::deque<double>& a, const std::deque<double>& b) {
+        if (a.size() < 5 || b.size() < 5) return 0.0;
+        size_t n = std::min(a.size(), b.size());
+        double mean_a = 0.0, mean_b = 0.0;
+        for (size_t i = a.size() - n; i < a.size(); i++) mean_a += a[i];
+        for (size_t i = b.size() - n; i < b.size(); i++) mean_b += b[i];
+        mean_a /= n; mean_b /= n;
+        double cov = 0.0, var_a = 0.0, var_b = 0.0;
+        for (size_t i = 0; i < n; i++) {
+            double da = a[a.size() - n + i] - mean_a;
+            double db = b[b.size() - n + i] - mean_b;
+            cov += da * db;
+            var_a += da * da;
+            var_b += db * db;
+        }
+        if (var_a < 1e-12 || var_b < 1e-12) return 0.0;
+        return fabs(cov / sqrt(var_a * var_b));
+    }
+
+    bool detect(size_t depth, const std::deque<double>& level_n,
+                const std::deque<double>& level_n_minus_1) {
+        double sim = compute_correlation(level_n, level_n_minus_1);
+        similarity_history.push_back(sim);
+        if (similarity_history.size() > WindowSize) similarity_history.pop_front();
+        if (sim > SIMILARITY_THRESHOLD) {
+            fractal_detected = true;
+            depth_reached = depth;
+            return true;
+        }
+        return false;
+    }
+
+    bool is_fractal() const { return fractal_detected; }
+    int get_depth() const { return depth_reached; }
+    double last_similarity() const {
+        return similarity_history.empty() ? 0.0 : similarity_history.back();
+    }
+};
+
+// Recursive Fractal Controller: 3-level self-optimizing bootstrap controller.
+// Level 1: Computes PHI from Cassini health and CKKS level.
+// Level 2: Adjusts threshold and learning rate.
+// Level 3: Detects fractal self-similarity.
+template<size_t HistorySize = 30>
+class RecursiveFractalController {
+private:
+    static constexpr double PHI = SpiralConstants::PHI;
+    static constexpr double INV_PHI = 0.6180339887498948482;
+
+    std::deque<ControllerState> level1_history;
+    std::deque<MetaControllerState> level2_history;
+    std::deque<double> level1_phi_series;
+    std::deque<double> level2_convergence_series;
+    std::deque<uint32_t> level_samples;
+    MetaControllerState current_meta;
+    FractalDetector<HistorySize> detector;
+
+    double compute_phi_from_operational(const OperationalState& op) {
+        double health_fraction = (op.total_layers > 0) ?
+            static_cast<double>(op.healthy_layers) / op.total_layers : 0.0;
+
+        double connectivity = 0.0;
+        if (level1_history.size() >= 2) {
+            for (size_t i = 1; i < level1_history.size(); i++) {
+                connectivity += fabs(level1_history[i].integrated_phi -
+                                     level1_history[i-1].integrated_phi);
+            }
+            connectivity /= (level1_history.size() - 1);
+        }
+
+        double cassini_signal = op.cassini_min;
+        double cassini_penalty = (cassini_signal < SpiralConstants::CASSINI_THRESHOLD * 3) ?
+            (1.0 - cassini_signal) : 0.0;
+
+        double level_fraction = (op.ckks_max_level > 0) ?
+            static_cast<double>(op.ckks_level) / op.ckks_max_level : 0.0;
+        double level_penalty = (level_fraction < 0.5) ? (1.0 - level_fraction) : 0.0;
+
+        double variance = 0.0;
+        if (level1_history.size() >= 3) {
+            double mean = 0.0;
+            for (auto& s : level1_history) mean += s.integrated_phi;
+            mean /= level1_history.size();
+            for (auto& s : level1_history) {
+                double d = s.integrated_phi - mean;
+                variance += d * d;
+            }
+            variance /= level1_history.size();
+        }
+
+        return (connectivity * health_fraction * (1.0 + cassini_penalty + level_penalty)) / (1.0 + variance);
+    }
+
+    MetaControllerState compute_meta_state(const OperationalState& op) {
+        MetaControllerState meta;
+        if (level1_history.size() < 10) {
+            meta.phi_convergence_rate = 0.0;
+            meta.threshold_stability = 0.0;
+            meta.learning_rate = INV_PHI;
+            meta.adjusted_threshold = SpiralConstants::CASSINI_THRESHOLD * 3;
+            meta.learned_min_level = 4;
+            meta.parameters_stable = false;
+            return meta;
+        }
+
+        size_t n = level1_history.size();
+        auto r_end = level1_history.end();
+        auto r_mid = level1_history.end() - std::min(size_t(5), n);
+        auto p_beg = level1_history.end() - std::min(size_t(10), n);
+
+        double recent_var = compute_variance(r_mid, r_end);
+        double prior_var = compute_variance(p_beg, r_mid);
+        meta.phi_convergence_rate = (prior_var > 1e-12)
+            ? 1.0 - (recent_var / prior_var) : 0.0;
+
+        meta.learning_rate = INV_PHI * (1.0 - meta.phi_convergence_rate) + 0.1;
+        meta.threshold_stability = level1_history.back().stability;
+        meta.adjusted_threshold = SpiralConstants::CASSINI_THRESHOLD * 
+            (1.0 + meta.learning_rate);
+
+        level_samples.push_back(op.ckks_level);
+        if (level_samples.size() > HistorySize) level_samples.pop_front();
+
+        if (level_samples.size() >= 5) {
+            uint32_t min_seen = *std::min_element(level_samples.begin(), level_samples.end());
+            uint32_t max_seen = *std::max_element(level_samples.begin(), level_samples.end());
+            uint32_t range = (max_seen > min_seen) ? (max_seen - min_seen) : 1;
+            meta.learned_min_level = min_seen + static_cast<uint32_t>(range * meta.learning_rate * 0.5);
+            if (meta.learned_min_level < 2) meta.learned_min_level = 2;
+            if (meta.learned_min_level > 8) meta.learned_min_level = 8;
+        } else {
+            meta.learned_min_level = 4;
+        }
+
+        meta.parameters_stable = (meta.threshold_stability > 0.9) &&
+                                  (meta.phi_convergence_rate > 0.5);
+        return meta;
+    }
+
+    double compute_variance(typename std::deque<ControllerState>::const_iterator begin,
+                            typename std::deque<ControllerState>::const_iterator end) {
+        if (begin == end) return 0.0;
+        double mean = 0.0;
+        size_t count = 0;
+        for (auto it = begin; it != end; ++it, ++count) mean += it->integrated_phi;
+        if (count == 0) return 0.0;
+        mean /= count;
+        double var = 0.0;
+        for (auto it = begin; it != end; ++it) {
+            double d = it->integrated_phi - mean;
+            var += d * d;
+        }
+        return var / count;
+    }
+
+    bool detect_fractal() {
+        if (level1_phi_series.size() < 10 || level2_convergence_series.size() < 10)
+            return false;
+        return detector.detect(3, level1_phi_series, level2_convergence_series);
+    }
+
+public:
+    RecursiveFractalController() {
+        current_meta.phi_convergence_rate = 0.0;
+        current_meta.threshold_stability = 0.0;
+        current_meta.learning_rate = INV_PHI;
+        current_meta.adjusted_threshold = SpiralConstants::CASSINI_THRESHOLD * 3;
+        current_meta.learned_min_level = 4;
+        current_meta.parameters_stable = false;
+    }
+
+    ControllerState update(const OperationalState& op_state) {
+        ControllerState ctrl;
+        ctrl.integrated_phi = compute_phi_from_operational(op_state);
+        ctrl.healthy_layers = op_state.healthy_layers;
+
+        if (level1_history.size() >= 5) {
+            std::vector<double> recent;
+            size_t start = level1_history.size() - std::min(size_t(5), level1_history.size());
+            for (size_t i = start; i < level1_history.size(); i++)
+                recent.push_back(level1_history[i].integrated_phi);
+            double mean = std::accumulate(recent.begin(), recent.end(), 0.0) / recent.size();
+            ctrl.stability = 0.0;
+            for (double v : recent)
+                ctrl.stability += (v - mean) * (v - mean);
+            ctrl.stability = 1.0 / (1.0 + ctrl.stability / recent.size());
+        } else {
+            ctrl.stability = 0.0;
+        }
+
+        bool ckks_critical = (op_state.ckks_level <= current_meta.learned_min_level);
+        bool cassini_critical = (op_state.cassini_min < current_meta.adjusted_threshold);
+        bool layers_degraded = (op_state.healthy_layers < op_state.total_layers);
+        bool emergency = (op_state.cassini_min < SpiralConstants::CASSINI_THRESHOLD * 2);
+
+        ctrl.should_bootstrap = ckks_critical || cassini_critical || layers_degraded || emergency;
+
+        level1_history.push_back(ctrl);
+        level1_phi_series.push_back(ctrl.integrated_phi);
+        if (level1_history.size() > HistorySize) level1_history.pop_front();
+        if (level1_phi_series.size() > HistorySize) level1_phi_series.pop_front();
+
+        current_meta = compute_meta_state(op_state);
+        level2_history.push_back(current_meta);
+        level2_convergence_series.push_back(current_meta.phi_convergence_rate);
+        if (level2_history.size() > HistorySize) level2_history.pop_front();
+        if (level2_convergence_series.size() > HistorySize)
+            level2_convergence_series.pop_front();
+
+        detect_fractal();
+        return ctrl;
+    }
+
+    ControllerState get_state() const {
+        return level1_history.empty() ? ControllerState{} : level1_history.back();
+    }
+    MetaControllerState get_meta() const { return current_meta; }
+    bool is_fractal() const { return detector.is_fractal(); }
+    double fractal_similarity() const { return detector.last_similarity(); }
+    double get_threshold() const { return current_meta.adjusted_threshold; }
+    double get_learning_rate() const { return current_meta.learning_rate; }
+    uint32_t get_min_level() const { return current_meta.learned_min_level; }
+    bool parameters_stable() const { return current_meta.parameters_stable; }
+};
+
+// Complete Bootstrap Engine: GF-N seed rotation + recursive fractal controller.
+template<int GFNLayers = 5, size_t HistorySize = 30>
+class CompleteBootstrap {
+private:
+    GFNState<GFNLayers> gf_state;
+    RecursiveFractalController<HistorySize> controller;
+    int bootstrap_count;
+    bool initialized;
+
+public:
+    CompleteBootstrap() : bootstrap_count(0), initialized(false) {}
+
+    void initialize(double seed) {
+        SideChannelDefense::prefault_stack();
+        gf_state.initialize(seed);
+        bootstrap_count = 0;
+        initialized = true;
+        SideChannelDefense::memory_barrier();
+    }
+
+    bool verify_integrity() const {
+        if (!initialized) return false;
+        SideChannelDefense::force_const_time();
+        bool r = gf_state.verify_all_layers();
+        SideChannelDefense::force_const_time();
+        return r;
+    }
+
+    int get_healthy_layers() const { return initialized ? gf_state.verify_and_count() : 0; }
+    constexpr int get_total_layers() const { return GFNLayers; }
+    double get_min_cassini() const { return initialized ? gf_state.get_min_cassini() : 0.0; }
+    int get_bootstrap_count() const { return bootstrap_count; }
+    int get_rotation_count() const { return gf_state.get_rotation_count(); }
+    bool is_initialized() const { return initialized; }
+    bool is_healthy() const { return initialized && gf_state.is_healthy(); }
+
+    ControllerState get_controller_state() const { return controller.get_state(); }
+    MetaControllerState get_meta_state() const { return controller.get_meta(); }
+    bool is_fractal_converged() const { return controller.is_fractal(); }
+    double get_fractal_similarity() const { return controller.fractal_similarity(); }
+    double get_learned_threshold() const { return controller.get_threshold(); }
+    double get_learning_rate() const { return controller.get_learning_rate(); }
+    uint32_t get_min_level() const { return controller.get_min_level(); }
+    bool parameters_stable() const { return controller.parameters_stable(); }
+
+    template<typename CipherTextType, typename SecureContextType>
+    CipherTextType bootstrap_auto(const CipherTextType& ct, SecureContextType& sc) {
+        if (!initialized) return ct;
+
+        SideChannelDefense::force_const_time();
+
+        OperationalState op;
+        op.cassini_min = gf_state.get_min_cassini();
+        op.healthy_layers = gf_state.verify_and_count();
+        op.total_layers = GFNLayers;
+        op.ckks_level = ct->GetLevel();
+        op.ckks_max_level = 32;
+        op.ops_since_bootstrap = bootstrap_count;
+
+        ControllerState ctrl = controller.update(op);
+
+        if (ctrl.should_bootstrap) {
+            SideChannelDefense::prefault_stack();
+            SideChannelDefense::force_const_time();
+
+            Plaintext temp_pt;
+            sc.cc->Decrypt(sc.kp.secretKey, ct, &temp_pt);
+            double current_val = temp_pt->GetCKKSPackedValue()[0].real();
+
+            gf_state.rotate_seeds(fabs(current_val));
+            bootstrap_count++;
+
+            auto fresh_ct = sc.cc->Encrypt(sc.kp.publicKey,
+                sc.cc->MakeCKKSPackedPlaintext(std::vector<double>{current_val}));
+
+            SideChannelDefense::memory_barrier();
+            return fresh_ct;
+        }
+
+        return ct;
     }
 };
